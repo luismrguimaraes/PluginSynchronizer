@@ -270,7 +270,7 @@ TEST_CASE("Is a inner loaded", "[Sync][InnerLoading]")
     CHECK(neither_inner_loaded_or_pd_has_value(processor2));
 }
 
-TEST_CASE("Plugin descriptions are syncronized between groups and switching groups updates inner", "[Sync][Groups]")
+TEST_CASE("Plugin descriptions are synchronized between groups and switching groups updates inner", "[Sync][Groups]")
 {
 #ifndef JUCE_MAC
     return;

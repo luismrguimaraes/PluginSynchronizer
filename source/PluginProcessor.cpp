@@ -380,6 +380,7 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
     require(main_state_xml != nullptr);
     main_state_xml->writeTo(logs_directory_.getChildFile("LoadedPluginState.xml"));
 
+    // load group before shared_state (which needs it)
     auto group = main_state_xml->getIntAttribute(kGroupTag, -1);
     require(group != -1);
     // silently update parameter

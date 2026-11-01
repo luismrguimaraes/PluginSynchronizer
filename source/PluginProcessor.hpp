@@ -21,24 +21,21 @@ enum class EditorStyle {
 
 struct EditorProps
 {
-    void getStateInformation(juce::MemoryBlock& destData, juce::File logs_directory)
+    void getStateInformation(juce::XmlElement& parent_xml)
     {
         jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-        juce::XmlElement xml { utils::kEditorPropsTag };
-        xml.setAttribute("user_scale", user_scale);
+        auto xml = std::make_unique<juce::XmlElement>(utils::kEditorPropsTag);
+        xml->setAttribute("user_scale", user_scale);
 
-        xml.writeTo(logs_directory.getChildFile("EditorPropsState.xml"));
-
-        const auto xlm_as_string = xml.toString();
-        destData.replaceAll(xlm_as_string.toRawUTF8(), xlm_as_string.getNumBytesAsUTF8());
+        parent_xml.addChildElement(xml.release());
     }
 
-    void setStateInformation(const void* data, int sizeInBytes)
+    void setStateInformation(juce::XmlElement& parent_xml)
     {
         jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-        auto xml = juce::XmlDocument::parse(juce::String(juce::CharPointer_UTF8(static_cast<const char*>(data)), static_cast<size_t>(sizeInBytes)));
+        auto xml = parent_xml.getChildByName(utils::kEditorPropsTag);
         require(xml != nullptr);
 
         auto recovered_user_scale = xml->getDoubleAttribute("user_scale", -1.0);

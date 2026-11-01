@@ -339,26 +339,17 @@ void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-    juce::XmlElement xml { utils::kMainStateTag };
+    juce::XmlElement main_state_xml { utils::kMainStateTag };
 
-    xml.setAttribute(kGroupTag, static_cast<int>(getGroup()));
-
-    xml.addChildElement([this] {
-        juce::MemoryBlock state;
-        editor_props_.getStateInformation(state, logs_directory_);
-
-        auto stateNode = std::make_unique<juce::XmlElement>(utils::kEditorPropsTag);
-        stateNode->addTextElement(state.toBase64Encoding());
-        return stateNode.release();
-    }());
+    main_state_xml.setAttribute(kGroupTag, static_cast<int>(getGroup()));
 
     {
         jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
         NRTMAudioPluginInstance::ScopedAccess<farbot::ThreadType::nonRealtime> inner(inner_);
         if (*inner != nullptr)
         {
-            xml.addChildElement((*inner)->getPluginDescription().createXml().release());
-            xml.addChildElement([&inner] {
+            main_state_xml.addChildElement((*inner)->getPluginDescription().createXml().release());
+            main_state_xml.addChildElement([&inner] {
                 juce::MemoryBlock state;
                 (*inner)->getStateInformation(state);
 
@@ -369,21 +360,15 @@ void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
         }
     }
 
-    xml.addChildElement([this] {
-        juce::MemoryBlock state;
-        shared_data_manager_.getStateInformation(state, logs_directory_);
+    shared_data_manager_.getStateInformation(main_state_xml);
+    editor_props_.getStateInformation(main_state_xml);
 
-        auto stateNode = std::make_unique<juce::XmlElement>(utils::kSharedStateTag);
-        stateNode->addTextElement(state.toBase64Encoding());
-        return stateNode.release();
-    }());
+    main_state_xml.setAttribute("accept_changes", accept_changes_);
+    main_state_xml.setAttribute("propagate_changes", propagate_changes_.load());
 
-    xml.setAttribute("accept_changes", accept_changes_);
-    xml.setAttribute("propagate_changes", propagate_changes_.load());
+    main_state_xml.writeTo(logs_directory_.getChildFile("PluginState.xml"));
 
-    xml.writeTo(logs_directory_.getChildFile("PluginState.xml"));
-
-    const auto xlm_as_string = xml.toString();
+    const auto xlm_as_string = main_state_xml.toString();
     destData.replaceAll(xlm_as_string.toRawUTF8(), xlm_as_string.getNumBytesAsUTF8());
 }
 
@@ -391,38 +376,33 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-    auto xml = juce::XmlDocument::parse(juce::String(juce::CharPointer_UTF8(static_cast<const char*>(data)), static_cast<size_t>(sizeInBytes)));
-    require(xml != nullptr);
-    xml->writeTo(logs_directory_.getChildFile("LoadedPluginState.xml"));
+    auto main_state_xml = juce::XmlDocument::parse(juce::String(juce::CharPointer_UTF8(static_cast<const char*>(data)), static_cast<size_t>(sizeInBytes)));
+    require(main_state_xml != nullptr);
+    main_state_xml->writeTo(logs_directory_.getChildFile("LoadedPluginState.xml"));
 
-    auto group = xml->getIntAttribute(kGroupTag, -1);
+    auto group = main_state_xml->getIntAttribute(kGroupTag, -1);
     require(group != -1);
     // silently update parameter
     auto& base = static_cast<juce::AudioProcessorParameter&>(getGroupParameter());
     base.setValue(getGroupParameter().convertTo0to1(static_cast<float>(group)));
 
-    if (auto* plugin_description_node = xml->getChildByName("PLUGIN"))
+    if (auto* plugin_description_node = main_state_xml->getChildByName("PLUGIN"))
     {
         juce::PluginDescription pd;
         pd.loadFromXml(*plugin_description_node);
 
         juce::MemoryBlock inner_state;
-        inner_state.fromBase64Encoding(xml->getChildElementAllSubText(kInnerStateTag, {}));
+        inner_state.fromBase64Encoding(main_state_xml->getChildElementAllSubText(kInnerStateTag, {}));
         require(!inner_state.isEmpty());
 
         setNewPlugin(pd, inner_state);
     }
 
-    juce::MemoryBlock shared_data_man_state;
-    shared_data_man_state.fromBase64Encoding(xml->getChildElementAllSubText(utils::kSharedStateTag, {}));
-    shared_data_manager_.setStateInformation(shared_data_man_state.getData(), static_cast<int>(shared_data_man_state.getSize()), logs_directory_);
+    shared_data_manager_.setStateInformation(*main_state_xml);
+    editor_props_.setStateInformation(*main_state_xml);
 
-    juce::MemoryBlock editor_props_state;
-    editor_props_state.fromBase64Encoding(xml->getChildElementAllSubText(utils::kEditorPropsTag, {}));
-    editor_props_.setStateInformation(editor_props_state.getData(), static_cast<int>(editor_props_state.getSize()));
-
-    accept_changes_ = xml->getBoolAttribute("accept_changes");
-    propagate_changes_.store(xml->getBoolAttribute("propagate_changes"));
+    accept_changes_ = main_state_xml->getBoolAttribute("accept_changes");
+    propagate_changes_.store(main_state_xml->getBoolAttribute("propagate_changes"));
 }
 
 void PluginProcessor::audioProcessorParameterChanged(AudioProcessor* processor,

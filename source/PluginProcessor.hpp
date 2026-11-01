@@ -89,7 +89,7 @@ public:
     void createSharedPluginInstance(const juce::PluginDescription& pd, EditorStyle where = EditorStyle::newWindow);
     std::optional<juce::PluginDescription> getPluginDescription() const;
 
-    void removeInner();
+    void removeSharedPluginInstance();
     bool needsEditorDeletion() const;
     bool isAnInnerLoaded() const;
     bool wantsInnerEditor() const;
@@ -143,6 +143,8 @@ private:
 
     void setNewPlugin(const juce::PluginDescription& pd, const juce::MemoryBlock& mb, std::optional<std::function<void()>> onSuccessCallback = std::nullopt);
     bool prepareInstance(juce::AudioPluginInstance* instance, double sampleRate, int samplesPerBlock);
+
+    void removeInner();
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)

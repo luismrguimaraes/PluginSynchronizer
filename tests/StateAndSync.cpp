@@ -242,19 +242,19 @@ TEST_CASE("Is a inner loaded", "[Sync][InnerLoading]")
 
     PluginProcessor processor1;
     runWithinPluginEditor(processor1, [pd, messageManager](PluginProcessor& processor) {
-        CHECK(!is_inner_loaded_and_pd_has_value(processor));
+        CHECK(neither_inner_loaded_or_pd_has_value(processor));
 
         processor.createSharedPluginInstance(pd);
         CHECK(messageManager->runDispatchLoopUntil(kAsyncCallWaitMs));
         CHECK(is_inner_loaded_and_pd_has_value(processor));
 
-        processor.removeInner();
-        CHECK(!is_inner_loaded_and_pd_has_value(processor));
+        processor.removeSharedPluginInstance();
+        CHECK(neither_inner_loaded_or_pd_has_value(processor));
     });
 
     PluginProcessor processor2;
     runWithinPluginEditor(processor2, [pd, messageManager](PluginProcessor& processor) {
-        CHECK(!is_inner_loaded_and_pd_has_value(processor));
+        CHECK(neither_inner_loaded_or_pd_has_value(processor));
 
         processor.createSharedPluginInstance(pd);
         CHECK(messageManager->runDispatchLoopUntil(kAsyncCallWaitMs));
@@ -263,9 +263,58 @@ TEST_CASE("Is a inner loaded", "[Sync][InnerLoading]")
     CHECK(is_inner_loaded_and_pd_has_value(processor2));
 
     runWithinPluginEditor(processor2, [pd](PluginProcessor& processor) {
-        processor.removeInner();
+        processor.removeSharedPluginInstance();
     });
 
-    CHECK(!is_inner_loaded_and_pd_has_value(processor1));
-    CHECK(!is_inner_loaded_and_pd_has_value(processor2));
+    CHECK(neither_inner_loaded_or_pd_has_value(processor1));
+    CHECK(neither_inner_loaded_or_pd_has_value(processor2));
+}
+
+TEST_CASE("Plugin descriptions are syncronized between groups and switching groups updates inner", "[Sync][Groups]")
+{
+#ifndef JUCE_MAC
+    return;
+#endif
+
+    auto* messageManager = juce::MessageManager::getInstance();
+    REQUIRE(messageManager != nullptr);
+
+    auto set_group = [](size_t group, PluginProcessor& processor) {
+        for (auto* parameter : processor.getParameters())
+        {
+            auto* choice = dynamic_cast<juce::AudioParameterChoice*>(parameter);
+            if (choice != nullptr && choice->getParameterID() == "group")
+            {
+                choice->setValueNotifyingHost(group);
+            }
+        }
+    };
+
+    auto pd = get_pd_from_xml(kCentaurVST3);
+
+    PluginProcessor processor1;
+    runWithinPluginEditor(processor1, [pd, messageManager](PluginProcessor& processor) {
+        CHECK(neither_inner_loaded_or_pd_has_value(processor));
+
+        processor.createSharedPluginInstance(pd);
+        CHECK(messageManager->runDispatchLoopUntil(kAsyncCallWaitMs));
+        CHECK(is_inner_loaded_and_pd_has_value(processor));
+        CHECK(utils::areDuplicates(processor.getPluginDescription().value(), pd));
+    });
+
+    PluginProcessor processor2;
+    CHECK(messageManager->runDispatchLoopUntil(kAsyncCallWaitMs));
+    CHECK(is_inner_loaded_and_pd_has_value(processor2));
+    CHECK(utils::areDuplicates(processor2.getPluginDescription().value(), processor1.getPluginDescription().value()));
+
+    set_group(1, processor1);
+    CHECK(neither_inner_loaded_or_pd_has_value(processor1));
+    CHECK(is_inner_loaded_and_pd_has_value(processor2));
+
+    set_group(1, processor2);
+    CHECK(neither_inner_loaded_or_pd_has_value(processor2));
+
+    set_group(0, processor2);
+    CHECK(messageManager->runDispatchLoopUntil(kAsyncCallWaitMs));
+    CHECK(is_inner_loaded_and_pd_has_value(processor2));
 }

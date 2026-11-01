@@ -43,6 +43,11 @@ bool is_inner_loaded_and_pd_has_value(const PluginProcessor& processor)
     return processor.getPluginDescription().has_value() && processor.isAnInnerLoaded();
 }
 
+bool neither_inner_loaded_or_pd_has_value(const PluginProcessor& processor)
+{
+    return !processor.getPluginDescription().has_value() && !processor.isAnInnerLoaded();
+}
+
 void apply_state(PluginProcessor& processor, const juce::MemoryBlock& state)
 {
     processor.setStateInformation(state.getData(), static_cast<int>(state.getSize()));

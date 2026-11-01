@@ -25,7 +25,6 @@ namespace
     constexpr bool kOutput { false };
     constexpr int kMainBus { 0 };
     constexpr int kSidechainBus { 1 };
-
 }
 
 //==============================================================================
@@ -39,8 +38,15 @@ PluginProcessor::PluginProcessor()
             ),
       apvts_ { *this, nullptr, "Params", {
 #ifdef DEBUG
-                                             std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "test_id", 1 }, "Test Param", juce::NormalisableRange<float>(), 0.0f)
+                                             std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "test_id", 1 }, "Test Param", juce::NormalisableRange<float>(), 0.0f),
 #endif
+                                             std::make_unique<juce::AudioParameterChoice>(
+                                                 juce::ParameterID { "group", 1 },
+                                                 "Group",
+                                                 [] { juce::StringArray group_names; for (int group = 0; group <= 31; ++group) group_names.add(juce::String{group + 1}); return group_names; }(),
+                                                 0,
+                                                 juce::AudioParameterChoiceAttributes {}.withAutomatable(false))
+
                                          } },
       async_call_processing_timer_ { [this]() { async_caller_.process(); } }
 {
@@ -421,7 +427,22 @@ void PluginProcessor::audioProcessorParameterChanged(AudioProcessor* processor,
     int parameterIndex,
     float newValue)
 {
-    if (processor == this) return;
+    if (processor == this)
+    {
+        jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+
+        const auto new_group = static_cast<size_t>(apvts_.getRawParameterValue("group")->load());
+        if (new_group != group_)
+        {
+            group_ = new_group;
+            auto pd_opt = shared_data_manager_.getPluginDescription(new_group);
+            if (pd_opt.has_value())
+                setNewPlugin(pd_opt.value(), {});
+            else
+                removeInner();
+        }
+        return;
+    }
 
     // assume processor is inner, we cannot acquire a realtime mutatable here because process block runs concurrently
 
@@ -721,24 +742,7 @@ std::optional<juce::PluginDescription> PluginProcessor::getPluginDescription() c
 
 void PluginProcessor::callbackRemoveInner()
 {
-    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
-    NRTMAudioPluginInstance::ScopedAccess<farbot::ThreadType::nonRealtime> inner(inner_);
-
-    if (*inner == nullptr)
-        return;
-
-    inner_prepared_.store(false);
-    needs_editor_deletion_ = true;
-    // make PluginEditor delete inner editor
-    juce::NullCheckedInvocation::invoke(plugin_changed_);
-    *inner = nullptr;
-
-    is_an_inner_loaded_ = false;
-    inner_plugin_description_.reset();
-    shared_data_manager_.removeInner(this);
-    needs_editor_deletion_ = false;
-
-    setLatencySamples(0);
+    removeInner();
 }
 
 size_t PluginProcessor::getGroup() const
@@ -783,7 +787,7 @@ void PluginProcessor::processorLayoutsChanged()
     });
 }
 
-void PluginProcessor::removeInner()
+void PluginProcessor::removeSharedPluginInstance()
 {
     shared_data_manager_.removeInner(this);
     notifyHost();
@@ -901,6 +905,28 @@ bool PluginProcessor::prepareInstance(juce::AudioPluginInstance* instance, doubl
     fill_with_silence(inner_process_buffer_);
 
     return true;
+}
+
+void PluginProcessor::removeInner()
+{
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+    NRTMAudioPluginInstance::ScopedAccess<farbot::ThreadType::nonRealtime> inner(inner_);
+
+    if (*inner == nullptr)
+        return;
+
+    inner_prepared_.store(false);
+    needs_editor_deletion_ = true;
+    // make PluginEditor delete inner editor
+    juce::NullCheckedInvocation::invoke(plugin_changed_);
+    *inner = nullptr;
+
+    is_an_inner_loaded_ = false;
+    inner_plugin_description_.reset();
+    shared_data_manager_.removeInner(this);
+    needs_editor_deletion_ = false;
+
+    setLatencySamples(0);
 }
 
 //==============================================================================

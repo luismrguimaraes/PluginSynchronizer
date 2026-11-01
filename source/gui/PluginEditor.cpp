@@ -169,7 +169,7 @@ namespace gui
         click_here_to_scan_.setText("<= click here to scan", juce::NotificationType::dontSendNotification);
 
         remove_button_.onClick = [this] {
-            processor_ref_.removeInner();
+            processor_ref_.removeSharedPluginInstance();
             updateUI();
             loader_->grabKeyboardFocus();
         };

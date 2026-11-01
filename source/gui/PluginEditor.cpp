@@ -280,7 +280,7 @@ namespace gui
 
             loader_->setBounds(getBounds());
             click_here_to_scan_.setBounds(loader_->getBounds().removeFromBottom(kButtonHeight).removeFromRight(getBounds().getWidth() - 83 - kMargin));
-            group_combo_box_.setBounds(getBounds().removeFromBottom(kButtonHeight).withSizeKeepingCentre(150, kButtonHeight));
+            group_combo_box_.setBounds(getBounds().removeFromBottom(kButtonHeight).withSizeKeepingCentre(114, 24));
         }
 
         setSize(static_cast<int>(kEditorWidth * user_scale), static_cast<int>(kEditorHeight * user_scale));
@@ -382,7 +382,7 @@ namespace gui
         }
 
         // force text update for selected item
-        group_combo_box_.setSelectedId(group_combo_box_.getItemId(selected_index), juce::dontSendNotification);
+        group_combo_box_.setSelectedId(group_combo_box_.getItemId(static_cast<int>(selected_index)), juce::dontSendNotification);
     }
 
     void PluginEditor::updateComponentsVisibility()

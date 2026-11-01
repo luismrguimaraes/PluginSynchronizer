@@ -1,12 +1,11 @@
 #pragma once
 
 #include "SharedData.hpp"
-#include "debug/JuceUtils.hpp"
 #include "farbot/include/farbot/AsyncCaller.hpp"
 #include "farbot/include/farbot/RealtimeObject.hpp"
 #include "farbot/include/farbot/fifo.hpp"
+#include "helpers/JuceUtils.hpp"
 #include "juce_core/system/juce_PlatformDefs.h"
-#include "utils.hpp"
 #include <exception>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <vector>
@@ -22,24 +21,21 @@ enum class EditorStyle {
 
 struct EditorProps
 {
-    void getStateInformation(juce::MemoryBlock& destData, juce::File logs_directory)
+    void getStateInformation(juce::XmlElement& parent_xml)
     {
         jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-        juce::XmlElement xml { utils::kEditorPropsTag };
-        xml.setAttribute("user_scale", user_scale);
+        auto xml = std::make_unique<juce::XmlElement>(utils::kEditorPropsTag);
+        xml->setAttribute("user_scale", user_scale);
 
-        xml.writeTo(logs_directory.getChildFile("EditorPropsState.xml"));
-
-        const auto xlm_as_string = xml.toString();
-        destData.replaceAll(xlm_as_string.toRawUTF8(), xlm_as_string.getNumBytesAsUTF8());
+        parent_xml.addChildElement(xml.release());
     }
 
-    void setStateInformation(const void* data, int sizeInBytes)
+    void setStateInformation(juce::XmlElement& parent_xml)
     {
         jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-        auto xml = juce::XmlDocument::parse(juce::String(juce::CharPointer_UTF8(static_cast<const char*>(data)), static_cast<size_t>(sizeInBytes)));
+        auto xml = parent_xml.getChildByName(utils::kEditorPropsTag);
         require(xml != nullptr);
 
         auto recovered_user_scale = xml->getDoubleAttribute("user_scale", -1.0);
@@ -69,6 +65,8 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override;
 
+    void reloadCachedPluginList();
+
     const juce::String getName() const override;
 
     bool acceptsMidi() const override;
@@ -87,8 +85,9 @@ public:
 
     void createSharedPluginInstance(const juce::PluginDescription& pd, EditorStyle where = EditorStyle::newWindow);
     std::optional<juce::PluginDescription> getPluginDescription() const;
+    std::optional<juce::PluginDescription> getSharedPluginDescription(size_t group) const;
 
-    void removeInner();
+    void removeSharedPluginInstance();
     bool needsEditorDeletion() const;
     bool isAnInnerLoaded() const;
     bool wantsInnerEditor() const;
@@ -115,6 +114,7 @@ public:
     void callbackLoadInnerState(const juce::PluginDescription& pluginDescription, const juce::MemoryBlock& stateMemoryBlock) override;
     void callbackUpdateParameterValue(int parameterIndex, float newValue) override;
     void callbackRemoveInner() override;
+    size_t getGroup() const override;
 
     void notifyHost();
 
@@ -126,6 +126,8 @@ public:
     void setUserScale(float user_scale);
 
     juce::KnownPluginList& getPluginList() noexcept;
+
+    juce::AudioParameterChoice& getGroupParameter() const;
 
     // For Tests
     void setInnerParameter(int parameterIndex, float newValue);
@@ -141,6 +143,8 @@ private:
 
     void setNewPlugin(const juce::PluginDescription& pd, const juce::MemoryBlock& mb, std::optional<std::function<void()>> onSuccessCallback = std::nullopt);
     bool prepareInstance(juce::AudioPluginInstance* instance, double sampleRate, int samplesPerBlock);
+
+    void removeInner();
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
@@ -164,8 +168,6 @@ private:
     juce::AudioBuffer<float> inner_process_buffer_;
     juce::AudioBuffer<float> double_process_buffer_;
     juce::AudioProcessorValueTreeState apvts_;
-
-    int group_ { 0 };
 
     SharedDataManager shared_data_manager_;
     bool accept_changes_ { true };

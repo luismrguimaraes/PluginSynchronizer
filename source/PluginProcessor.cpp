@@ -25,7 +25,6 @@ namespace
     constexpr bool kOutput { false };
     constexpr int kMainBus { 0 };
     constexpr int kSidechainBus { 1 };
-
 }
 
 //==============================================================================
@@ -39,8 +38,15 @@ PluginProcessor::PluginProcessor()
             ),
       apvts_ { *this, nullptr, "Params", {
 #ifdef DEBUG
-                                             std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "test_id", 1 }, "Test Param", juce::NormalisableRange<float>(), 0.0f)
+                                             std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "test_id", 1 }, "Test Param", juce::NormalisableRange<float>(), 0.0f),
 #endif
+                                             std::make_unique<juce::AudioParameterChoice>(
+                                                 juce::ParameterID { "group", 1 },
+                                                 "Group",
+                                                 [] { juce::StringArray group_names; for (int group = 0; group <= 31; ++group) group_names.add(juce::String{group + 1}); return group_names; }(),
+                                                 0,
+                                                 juce::AudioParameterChoiceAttributes {}.withAutomatable(false))
+
                                          } },
       async_call_processing_timer_ { [this]() { async_caller_.process(); } }
 {
@@ -61,20 +67,19 @@ PluginProcessor::PluginProcessor()
 
     if (auto savedPluginList = app_properties_.getUserSettings()->getXmlValue("pluginList_"))
         plugin_list_.recreateFromXml(*savedPluginList);
+    juce::MessageManagerLock lock; // why is this here?
+    plugin_list_.addChangeListener(this);
 
     juce::String logs_folder { "Logs" };
     logs_directory_ = app_properties_.getUserSettings()->getFile().getParentDirectory().getChildFile(logs_folder);
     logs_directory_.createDirectory();
-
-    juce::MessageManagerLock lock; // why is this here?
-    plugin_list_.addChangeListener(this);
 
     shared_data_manager_.addListener(this);
     this->addListener(this);
 
     async_call_processing_timer_.startTimer(kAsyncCallProcessingMs);
 
-    auto shared_pd = shared_data_manager_.getPluginDescription();
+    auto shared_pd = shared_data_manager_.getPluginDescription(getGroup());
     if (shared_pd.has_value())
     {
         setNewPlugin(shared_pd.value(), {});
@@ -189,7 +194,7 @@ void PluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
                     "Could not prepare plugin. Removing it...",
                     "");
                 message_box_ = juce::AlertWindow::showScopedAsync(options, nullptr);
-                removeInner();
+                shared_data_manager_.removeInner(this);
             }
             else
             {
@@ -310,14 +315,23 @@ void PluginProcessor::processBlock(juce::AudioBuffer<double>& buffer, juce::Midi
 }
 
 //==============================================================================
+
+juce::AudioProcessorEditor* PluginProcessor::createEditor()
+{
+    return new gui::PluginEditor(*this, logs_directory_);
+}
+
 bool PluginProcessor::hasEditor() const
 {
     return true; // (change this to false if you choose to not supply an editor)
 }
 
-juce::AudioProcessorEditor* PluginProcessor::createEditor()
+void PluginProcessor::reloadCachedPluginList()
 {
-    return new gui::PluginEditor(*this, logs_directory_);
+    auto user_settings = app_properties_.getUserSettings();
+    user_settings->reload();
+    if (auto savedPluginList = user_settings->getXmlValue("pluginList_"))
+        plugin_list_.recreateFromXml(*savedPluginList);
 }
 
 //==============================================================================
@@ -325,26 +339,17 @@ void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-    juce::XmlElement xml { utils::kMainStateTag };
+    juce::XmlElement main_state_xml { utils::kMainStateTag };
 
-    xml.setAttribute(kGroupTag, group_);
-
-    xml.addChildElement([this] {
-        juce::MemoryBlock state;
-        editor_props_.getStateInformation(state, logs_directory_);
-
-        auto stateNode = std::make_unique<juce::XmlElement>(utils::kEditorPropsTag);
-        stateNode->addTextElement(state.toBase64Encoding());
-        return stateNode.release();
-    }());
+    main_state_xml.setAttribute(kGroupTag, static_cast<int>(getGroup()));
 
     {
         jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
         NRTMAudioPluginInstance::ScopedAccess<farbot::ThreadType::nonRealtime> inner(inner_);
         if (*inner != nullptr)
         {
-            xml.addChildElement((*inner)->getPluginDescription().createXml().release());
-            xml.addChildElement([&inner] {
+            main_state_xml.addChildElement((*inner)->getPluginDescription().createXml().release());
+            main_state_xml.addChildElement([&inner] {
                 juce::MemoryBlock state;
                 (*inner)->getStateInformation(state);
 
@@ -355,21 +360,15 @@ void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
         }
     }
 
-    xml.addChildElement([this] {
-        juce::MemoryBlock state;
-        shared_data_manager_.getStateInformation(state, logs_directory_);
+    shared_data_manager_.getStateInformation(main_state_xml);
+    editor_props_.getStateInformation(main_state_xml);
 
-        auto stateNode = std::make_unique<juce::XmlElement>(utils::kSharedStateTag);
-        stateNode->addTextElement(state.toBase64Encoding());
-        return stateNode.release();
-    }());
+    main_state_xml.setAttribute("accept_changes", accept_changes_);
+    main_state_xml.setAttribute("propagate_changes", propagate_changes_.load());
 
-    xml.setAttribute("accept_changes", accept_changes_);
-    xml.setAttribute("propagate_changes", propagate_changes_.load());
+    main_state_xml.writeTo(logs_directory_.getChildFile("PluginState.xml"));
 
-    xml.writeTo(logs_directory_.getChildFile("PluginState.xml"));
-
-    const auto xlm_as_string = xml.toString();
+    const auto xlm_as_string = main_state_xml.toString();
     destData.replaceAll(xlm_as_string.toRawUTF8(), xlm_as_string.getNumBytesAsUTF8());
 }
 
@@ -377,42 +376,56 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-    auto xml = juce::XmlDocument::parse(juce::String(juce::CharPointer_UTF8(static_cast<const char*>(data)), static_cast<size_t>(sizeInBytes)));
-    require(xml != nullptr);
-    xml->writeTo(logs_directory_.getChildFile("LoadedPluginState.xml"));
+    auto main_state_xml = juce::XmlDocument::parse(juce::String(juce::CharPointer_UTF8(static_cast<const char*>(data)), static_cast<size_t>(sizeInBytes)));
+    require(main_state_xml != nullptr);
+    main_state_xml->writeTo(logs_directory_.getChildFile("LoadedPluginState.xml"));
 
-    group_ = xml->getIntAttribute(kGroupTag, -1);
-    require(group_ != -1);
+    // load group before shared_state (which needs it)
+    auto group = main_state_xml->getIntAttribute(kGroupTag, -1);
+    require(group != -1);
+    // silently update parameter
+    auto& base = static_cast<juce::AudioProcessorParameter&>(getGroupParameter());
+    base.setValue(getGroupParameter().convertTo0to1(static_cast<float>(group)));
 
-    if (auto* plugin_description_node = xml->getChildByName("PLUGIN"))
+    if (auto* plugin_description_node = main_state_xml->getChildByName("PLUGIN"))
     {
         juce::PluginDescription pd;
         pd.loadFromXml(*plugin_description_node);
 
         juce::MemoryBlock inner_state;
-        inner_state.fromBase64Encoding(xml->getChildElementAllSubText(kInnerStateTag, {}));
+        inner_state.fromBase64Encoding(main_state_xml->getChildElementAllSubText(kInnerStateTag, {}));
         require(!inner_state.isEmpty());
 
         setNewPlugin(pd, inner_state);
     }
 
-    juce::MemoryBlock shared_data_man_state;
-    shared_data_man_state.fromBase64Encoding(xml->getChildElementAllSubText(utils::kSharedStateTag, {}));
-    shared_data_manager_.setStateInformation(shared_data_man_state.getData(), static_cast<int>(shared_data_man_state.getSize()), logs_directory_);
+    shared_data_manager_.setStateInformation(*main_state_xml);
+    editor_props_.setStateInformation(*main_state_xml);
 
-    juce::MemoryBlock editor_props_state;
-    editor_props_state.fromBase64Encoding(xml->getChildElementAllSubText(utils::kEditorPropsTag, {}));
-    editor_props_.setStateInformation(editor_props_state.getData(), static_cast<int>(editor_props_state.getSize()));
-
-    accept_changes_ = xml->getBoolAttribute("accept_changes");
-    propagate_changes_.store(xml->getBoolAttribute("propagate_changes"));
+    accept_changes_ = main_state_xml->getBoolAttribute("accept_changes");
+    propagate_changes_.store(main_state_xml->getBoolAttribute("propagate_changes"));
 }
 
 void PluginProcessor::audioProcessorParameterChanged(AudioProcessor* processor,
     int parameterIndex,
     float newValue)
 {
-    if (processor == this) return;
+    if (processor == this)
+    {
+        jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+
+        if (parameterIndex == getGroupParameter().getParameterIndex())
+        {
+            auto pd_opt = shared_data_manager_.getPluginDescription(getGroup());
+            if (pd_opt.has_value())
+                setNewPlugin(pd_opt.value(), {});
+            else
+                removeInner();
+
+            notifyHost();
+        }
+        return;
+    }
 
     // assume processor is inner, we cannot acquire a realtime mutatable here because process block runs concurrently
 
@@ -556,6 +569,22 @@ void PluginProcessor::setUserScale(float user_scale)
 juce::KnownPluginList& PluginProcessor::getPluginList() noexcept
 {
     return plugin_list_;
+}
+
+juce::AudioParameterChoice& PluginProcessor::getGroupParameter() const
+{
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+
+    for (auto* parameter : getParameters())
+    {
+        auto* choice = dynamic_cast<juce::AudioParameterChoice*>(parameter);
+        if (choice != nullptr && choice->getParameterID() == "group")
+        {
+            return *choice;
+        }
+    }
+
+    require(false);
 }
 
 void PluginProcessor::setInnerParameter(int parameterIndex, float newValue)
@@ -710,28 +739,21 @@ std::optional<juce::PluginDescription> PluginProcessor::getPluginDescription() c
     return inner_plugin_description_;
 }
 
-void PluginProcessor::callbackRemoveInner()
+std::optional<juce::PluginDescription> PluginProcessor::getSharedPluginDescription(size_t group) const
 {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
-    NRTMAudioPluginInstance::ScopedAccess<farbot::ThreadType::nonRealtime> inner(inner_);
 
-    if (*inner == nullptr)
-        return;
+    return shared_data_manager_.getPluginDescription(group);
+}
 
-    inner_prepared_.store(false);
-    needs_editor_deletion_ = true;
-    // make PluginEditor delete inner editor
-    juce::NullCheckedInvocation::invoke(plugin_changed_);
-    *inner = nullptr;
+void PluginProcessor::callbackRemoveInner()
+{
+    removeInner();
+}
 
-    is_an_inner_loaded_ = false;
-    inner_plugin_description_.reset();
-    shared_data_manager_.removeInner();
-    needs_editor_deletion_ = false;
-
-    setLatencySamples(0);
-
-    notifyHost();
+size_t PluginProcessor::getGroup() const
+{
+    return static_cast<size_t>(getGroupParameter().getIndex());
 }
 
 void PluginProcessor::notifyHost()
@@ -771,9 +793,10 @@ void PluginProcessor::processorLayoutsChanged()
     });
 }
 
-void PluginProcessor::removeInner()
+void PluginProcessor::removeSharedPluginInstance()
 {
-    shared_data_manager_.removeInner();
+    shared_data_manager_.removeInner(this);
+    notifyHost();
 }
 
 bool PluginProcessor::needsEditorDeletion() const
@@ -888,6 +911,28 @@ bool PluginProcessor::prepareInstance(juce::AudioPluginInstance* instance, doubl
     fill_with_silence(inner_process_buffer_);
 
     return true;
+}
+
+void PluginProcessor::removeInner()
+{
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+    NRTMAudioPluginInstance::ScopedAccess<farbot::ThreadType::nonRealtime> inner(inner_);
+
+    if (*inner == nullptr)
+        return;
+
+    inner_prepared_.store(false);
+    needs_editor_deletion_ = true;
+    // make PluginEditor delete inner editor
+    juce::NullCheckedInvocation::invoke(plugin_changed_);
+    *inner = nullptr;
+
+    is_an_inner_loaded_ = false;
+    inner_plugin_description_.reset();
+    shared_data_manager_.removeInner(this);
+    needs_editor_deletion_ = false;
+
+    setLatencySamples(0);
 }
 
 //==============================================================================

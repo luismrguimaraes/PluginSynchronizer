@@ -14,7 +14,7 @@ TEST_CASE("Plugin instance", "")
     SECTION("name")
     {
         CHECK_THAT(testPlugin.getName().toStdString(),
-            Catch::Matchers::Equals("Plugin Syncronizer"));
+            Catch::Matchers::Equals("Plugin Synchronizer"));
     }
 }
 

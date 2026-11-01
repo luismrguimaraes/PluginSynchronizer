@@ -1,10 +1,10 @@
-# Plugin Syncronizer
+# Plugin Synchronizer
 
 This is an audio plugin that hosts other audio plugins and keeps them synchronized across multiple instances. Also supports MIDI and sidechain inputs.
 
-Download from the [releases page](https://github.com/luismrguimaraes/PluginSyncronizer/releases).
+Download from the [releases page](https://github.com/luismrguimaraes/PluginSynchronizer/releases).
 
-So far, **VST3** is the most tested format and VST3 (Plugin Syncronizer) hosting VST3 (other plugins) is the most stable combination.
+So far, **VST3** is the most tested format and VST3 (Plugin Synchronizer) hosting VST3 (other plugins) is the most stable combination.
 
 This is **NOT** a vibe-coded plugin, a lot of care is being taken to develop and test the plugin.
 
@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/551a12d8-c295-42ee-aa34-b3db620c8f2f
 - member_variable\_
 - a_regular_variable
 - functionParameter
-- kSomeConstant
+- kSomeConstantThatRemainsUnchangedDuringRuntime
 - free_function()
 
 ### For template updates

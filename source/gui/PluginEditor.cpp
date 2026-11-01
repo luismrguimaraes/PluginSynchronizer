@@ -198,18 +198,11 @@ namespace gui
             propagate_changes_toggle_.setToggleState(!old_value, juce::NotificationType::sendNotification);
         };
 
+        auto& group_param = processor_ref_.getGroupParameter();
         group_combo_box_.setName("Group");
         group_combo_box_.setJustificationType(juce::Justification::centred);
-        for (auto* parameter : processor_ref_.getParameters())
-        {
-            auto* choice = dynamic_cast<juce::AudioParameterChoice*>(parameter);
-            if (choice != nullptr && choice->getParameterID() == "group")
-            {
-                group_combo_box_.addItemList(choice->choices, 1);
-                group_attachment_ = std::make_unique<juce::ComboBoxParameterAttachment>(*choice, group_combo_box_);
-                break;
-            }
-        }
+        group_combo_box_.addItemList(group_param.choices, 1);
+        group_attachment_ = std::make_unique<juce::ComboBoxParameterAttachment>(processor_ref_.getGroupParameter(), group_combo_box_);
         jassert(group_attachment_ != nullptr);
 
 #ifdef DEBUG
@@ -287,10 +280,10 @@ namespace gui
 
             loader_->setBounds(getBounds());
             click_here_to_scan_.setBounds(loader_->getBounds().removeFromBottom(kButtonHeight).removeFromRight(getBounds().getWidth() - 83 - kMargin));
-            group_combo_box_.setBounds(getBounds().removeFromBottom(kButtonHeight).withSizeKeepingCentre(200, kButtonHeight));
+            group_combo_box_.setBounds(getBounds().removeFromBottom(kButtonHeight).withSizeKeepingCentre(150, kButtonHeight));
         }
 
-        setSize(kEditorWidth * user_scale, kEditorHeight * user_scale);
+        setSize(static_cast<int>(kEditorWidth * user_scale), static_cast<int>(kEditorHeight * user_scale));
 
         pluginChanged();
 
@@ -318,7 +311,7 @@ namespace gui
         scale = std::clamp(scale, 0.5f, 4.0f);
 
         main_component_.setTransform(juce::AffineTransform::scale(scale));
-        setSize(kEditorWidth * scale, kEditorHeight * scale);
+        setSize(static_cast<int>(kEditorWidth * scale), static_cast<int>(kEditorHeight * scale));
         processor_ref_.setUserScale(scale);
     }
 
@@ -375,7 +368,7 @@ namespace gui
     {
         updateComponentsVisibility();
 
-        const auto selected_index = group_combo_box_.getSelectedItemIndex();
+        const auto selected_index = processor_ref_.getGroup();
 
         for (int i = 0; i < group_combo_box_.getNumItems(); ++i)
         {
@@ -435,9 +428,9 @@ namespace gui
             {
                 case EditorStyle::thisWindow:
                     require(false); // not implemented
-                    addChildComponent(editorComponent.get());
-                    setSize(editorComponent->getWidth(), editorComponent->getHeight());
-                    return std::move(editorComponent);
+                    // addChildComponent(editorComponent.get());
+                    // setSize(editorComponent->getWidth(), editorComponent->getHeight());
+                    // return std::move(editorComponent);
 
                 case EditorStyle::newWindow:
                     const auto bg = getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId).darker();

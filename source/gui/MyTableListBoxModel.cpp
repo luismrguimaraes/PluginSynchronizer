@@ -31,7 +31,7 @@ namespace gui
     void MyTableListBoxModel::paintCell(juce::Graphics&, int, int, int, int, bool) {}
 
     juce::Component*
-        MyTableListBoxModel::refreshComponentForCell(int row, int columnId, bool isRowSelected, juce::Component* existingComponentToUpdate)
+        MyTableListBoxModel::refreshComponentForCell(int row, int columnId, [[maybe_unused]] bool isRowSelected, juce::Component* existingComponentToUpdate)
     {
         juce::String text;
         bool isBlacklisted = row >= list.getNumTypes();

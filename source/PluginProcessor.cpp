@@ -79,7 +79,7 @@ PluginProcessor::PluginProcessor()
 
     async_call_processing_timer_.startTimer(kAsyncCallProcessingMs);
 
-    auto shared_pd = shared_data_manager_.getPluginDescription(group_);
+    auto shared_pd = shared_data_manager_.getPluginDescription(getGroup());
     if (shared_pd.has_value())
     {
         setNewPlugin(shared_pd.value(), {});
@@ -341,7 +341,7 @@ void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 
     juce::XmlElement xml { utils::kMainStateTag };
 
-    xml.setAttribute(kGroupTag, static_cast<int>(group_));
+    xml.setAttribute(kGroupTag, static_cast<int>(getGroup()));
 
     xml.addChildElement([this] {
         juce::MemoryBlock state;
@@ -397,7 +397,9 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
 
     auto group = xml->getIntAttribute(kGroupTag, -1);
     require(group != -1);
-    group_ = static_cast<size_t>(group);
+    // silently update parameter
+    auto& base = static_cast<juce::AudioProcessorParameter&>(getGroupParameter());
+    base.setValue(getGroupParameter().convertTo0to1(static_cast<float>(group)));
 
     if (auto* plugin_description_node = xml->getChildByName("PLUGIN"))
     {
@@ -431,15 +433,15 @@ void PluginProcessor::audioProcessorParameterChanged(AudioProcessor* processor,
     {
         jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-        const auto new_group = static_cast<size_t>(apvts_.getRawParameterValue("group")->load());
-        if (new_group != group_)
+        if (parameterIndex == getGroupParameter().getParameterIndex())
         {
-            group_ = new_group;
-            auto pd_opt = shared_data_manager_.getPluginDescription(new_group);
+            auto pd_opt = shared_data_manager_.getPluginDescription(getGroup());
             if (pd_opt.has_value())
                 setNewPlugin(pd_opt.value(), {});
             else
                 removeInner();
+
+            notifyHost();
         }
         return;
     }
@@ -586,6 +588,22 @@ void PluginProcessor::setUserScale(float user_scale)
 juce::KnownPluginList& PluginProcessor::getPluginList() noexcept
 {
     return plugin_list_;
+}
+
+juce::AudioParameterChoice& PluginProcessor::getGroupParameter() const
+{
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+
+    for (auto* parameter : getParameters())
+    {
+        auto* choice = dynamic_cast<juce::AudioParameterChoice*>(parameter);
+        if (choice != nullptr && choice->getParameterID() == "group")
+        {
+            return *choice;
+        }
+    }
+
+    require(false);
 }
 
 void PluginProcessor::setInnerParameter(int parameterIndex, float newValue)
@@ -754,7 +772,7 @@ void PluginProcessor::callbackRemoveInner()
 
 size_t PluginProcessor::getGroup() const
 {
-    return group_;
+    return static_cast<size_t>(getGroupParameter().getIndex());
 }
 
 void PluginProcessor::notifyHost()

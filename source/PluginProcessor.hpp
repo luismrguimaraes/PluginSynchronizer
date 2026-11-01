@@ -130,6 +130,8 @@ public:
 
     juce::KnownPluginList& getPluginList() noexcept;
 
+    juce::AudioParameterChoice& getGroupParameter() const;
+
     // For Tests
     void setInnerParameter(int parameterIndex, float newValue);
     float getInnerParameter(int parameterIndex) const;
@@ -169,8 +171,6 @@ private:
     juce::AudioBuffer<float> inner_process_buffer_;
     juce::AudioBuffer<float> double_process_buffer_;
     juce::AudioProcessorValueTreeState apvts_;
-
-    size_t group_ { 0 };
 
     SharedDataManager shared_data_manager_;
     bool accept_changes_ { true };

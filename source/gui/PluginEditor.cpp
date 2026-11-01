@@ -144,6 +144,8 @@ namespace gui
     PluginEditor::PluginEditor(PluginProcessor& p, juce::File logs_directory)
         : AudioProcessorEditor { &p }, processor_ref_ { p }, scoped_callback_ { p.plugin_changed_, [this] { pluginChanged(); } }, ui_update_timer_ { [this]() { updateUI(); } }
     {
+        setLookAndFeel(&look_and_feel_);
+
         loader_ = std::make_unique<PluginLoaderComponent>(p.plugin_format_manager_, p.getPluginList(), logs_directory, [&p](const juce::PluginDescription& pd, EditorStyle editorStyle) {
             p.createSharedPluginInstance(pd, editorStyle);
         });
@@ -221,18 +223,6 @@ namespace gui
             inspector_->setVisible(true);
         };
 #endif
-        {
-            look_and_feel_.setColour(juce::ResizableWindow::backgroundColourId, juce::Colour { 0xFF2a2e41 });
-            look_and_feel_.setColour(juce::ListBox::backgroundColourId, juce::Colour { 0xFF2a2e41 });
-
-            look_and_feel_.setColour(juce::TextButton::buttonColourId, juce::Colour(juce::Colour { 0xFF7e6207 }));
-            look_and_feel_.setColour(juce::TextButton::buttonOnColourId, juce::Colour(juce::Colour { 0xFF7e6207 }.brighter()));
-
-            look_and_feel_.setColour(juce::ComboBox::backgroundColourId, juce::Colour { 0xFF2a2e41 });
-
-            setLookAndFeel(&look_and_feel_);
-            main_component_.setLookAndFeel(&look_and_feel_);
-        }
 
         addAndMakeVisible(main_component_);
         main_component_.addChildComponent(loader_.get());

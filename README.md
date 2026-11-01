@@ -10,7 +10,7 @@ This is **NOT** a vibe-coded plugin, a lot of care is being taken to develop and
 
 ### Demo
 
-https://github.com/user-attachments/assets/551a12d8-c295-42ee-aa34-b3db620c8f2f
+https://github.com/user-attachments/assets/190259d7-bc91-40b7-aa4d-21faa4f29f0a
 
 ### How to make macOS trust the plugin
 

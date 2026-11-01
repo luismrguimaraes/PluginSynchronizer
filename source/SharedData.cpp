@@ -171,7 +171,7 @@ void SharedDataManager::removeInner(const SharedData::Listener* sender)
     }
 }
 
-std::optional<juce::PluginDescription> SharedDataManager::getPluginDescription(size_t group)
+std::optional<juce::PluginDescription> SharedDataManager::getPluginDescription(size_t group) const
 {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
 

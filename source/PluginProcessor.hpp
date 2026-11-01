@@ -88,6 +88,7 @@ public:
 
     void createSharedPluginInstance(const juce::PluginDescription& pd, EditorStyle where = EditorStyle::newWindow);
     std::optional<juce::PluginDescription> getPluginDescription() const;
+    std::optional<juce::PluginDescription> getSharedPluginDescription(size_t group) const;
 
     void removeSharedPluginInstance();
     bool needsEditorDeletion() const;

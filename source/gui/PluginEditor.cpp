@@ -3,6 +3,7 @@
 #include "juce_core/system/juce_PlatformDefs.h"
 #include <algorithm>
 #include <memory>
+#include <optional>
 
 namespace
 {
@@ -158,7 +159,11 @@ namespace gui
         supports_sidechain_.setText("Supports Sidechain", juce::NotificationType::dontSendNotification);
 
         version_info_.setJustificationType(juce::Justification::centredRight);
+#ifdef DEBUG
+        version_info_.setText(processor_ref_.getName() + " version: 0.0.0", juce::NotificationType::dontSendNotification);
+#else
         version_info_.setText(processor_ref_.getName() + " version: " + VERSION, juce::NotificationType::dontSendNotification);
+#endif
         version_info_.setColour(juce::Label::ColourIds::textColourId, getLookAndFeel().findColour(juce::Label::ColourIds::textColourId).darker());
 
         no_scanned_plugins_.setJustificationType(juce::Justification::centred);
@@ -191,6 +196,20 @@ namespace gui
             propagate_changes_toggle_.setToggleState(!old_value, juce::NotificationType::sendNotification);
         };
 
+        group_combo_box_.setName("Group");
+        group_combo_box_.setJustificationType(juce::Justification::centred);
+        for (auto* parameter : processor_ref_.getParameters())
+        {
+            auto* choice = dynamic_cast<juce::AudioParameterChoice*>(parameter);
+            if (choice != nullptr && choice->getParameterID() == "group")
+            {
+                group_combo_box_.addItemList(choice->choices, 1);
+                group_attachment_ = std::make_unique<juce::ComboBoxParameterAttachment>(*choice, group_combo_box_);
+                break;
+            }
+        }
+        jassert(group_attachment_ != nullptr);
+
 #ifdef DEBUG
         inspect_button_.onClick = [&] {
             if (!inspector_)
@@ -209,6 +228,8 @@ namespace gui
             look_and_feel_.setColour(juce::TextButton::buttonColourId, juce::Colour(juce::Colour { 0xFF7e6207 }));
             look_and_feel_.setColour(juce::TextButton::buttonOnColourId, juce::Colour(juce::Colour { 0xFF7e6207 }.brighter()));
 
+            look_and_feel_.setColour(juce::ComboBox::backgroundColourId, juce::Colour { 0xFF2a2e41 });
+
             setLookAndFeel(&look_and_feel_);
             main_component_.setLookAndFeel(&look_and_feel_);
         }
@@ -222,6 +243,7 @@ namespace gui
         main_component_.addChildComponent(version_info_);
         main_component_.addChildComponent(inner_name_);
 
+        main_component_.addAndMakeVisible(group_combo_box_);
         main_component_.addChildComponent(remove_button_);
         main_component_.addChildComponent(show_button_);
         main_component_.addChildComponent(propagate_state_button_);
@@ -275,6 +297,7 @@ namespace gui
 
             loader_->setBounds(getBounds());
             click_here_to_scan_.setBounds(loader_->getBounds().removeFromBottom(kButtonHeight).removeFromRight(getBounds().getWidth() - 83 - kMargin));
+            group_combo_box_.setBounds(getBounds().removeFromBottom(kButtonHeight).withSizeKeepingCentre(200, kButtonHeight));
         }
 
         setSize(kEditorWidth * user_scale, kEditorHeight * user_scale);
@@ -361,6 +384,22 @@ namespace gui
     void PluginEditor::updateUI()
     {
         updateComponentsVisibility();
+
+        const auto selected_index = group_combo_box_.getSelectedItemIndex();
+
+        for (int i = 0; i < group_combo_box_.getNumItems(); ++i)
+        {
+            auto pd = processor_ref_.getSharedPluginDescription(static_cast<size_t>(i));
+            auto item_name = juce::String { "Group " } + juce::String { i + 1 };
+
+            if (pd.has_value())
+                item_name += " (" + pd.value().name + ")";
+
+            group_combo_box_.changeItemText(group_combo_box_.getItemId(i), item_name);
+        }
+
+        // force text update for selected item
+        group_combo_box_.setSelectedId(group_combo_box_.getItemId(selected_index), juce::dontSendNotification);
     }
 
     void PluginEditor::updateComponentsVisibility()

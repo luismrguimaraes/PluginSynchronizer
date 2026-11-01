@@ -740,6 +740,13 @@ std::optional<juce::PluginDescription> PluginProcessor::getPluginDescription() c
     return inner_plugin_description_;
 }
 
+std::optional<juce::PluginDescription> PluginProcessor::getSharedPluginDescription(size_t group) const
+{
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+
+    return shared_data_manager_.getPluginDescription(group);
+}
+
 void PluginProcessor::callbackRemoveInner()
 {
     removeInner();
